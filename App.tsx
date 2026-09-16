@@ -1,45 +1,52 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, {useState} from 'react';
+import {Text, TouchableOpacity, View} from 'react-native';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import LoginScreen from './src/screens/LoginScreen';
+import AdminDashboard from './src/screens/AdminDashboard';
+import StudentList from './src/components/students/StudentList';
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+type Screen = 'login' | 'dashboard' | 'students';
 
-  return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
-  );
-}
+function App(): React.JSX.Element {
+  const [screen, setScreen] = useState<Screen>('login');
 
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
+  const handleLoginSuccess = () => {
+    console.log('LOGIN SUCCESS → DASHBOARD');
+    setScreen('dashboard');
+  };
 
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
+  const handleManageStudents = () => {
+    console.log('MANAGE STUDENTS → STUDENT LIST');
+    setScreen('students');
+  };
+
+  const handleBackToDashboard = () => {
+    console.log('STUDENT LIST → DASHBOARD');
+    setScreen('dashboard');
+  };
+
+  if (screen === 'login') {
+    return (
+      <LoginScreen
+        onLoginSuccess={handleLoginSuccess}
       />
-    </View>
+    );
+  }
+
+  if (screen === 'students') {
+    return (
+      <StudentList
+        onBack={handleBackToDashboard}
+      />
+    );
+  }
+
+  return (
+    <AdminDashboard
+      onLogout={() => setScreen('login')}
+      onStudentsPress={handleManageStudents}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});
 
 export default App;
