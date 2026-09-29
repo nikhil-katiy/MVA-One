@@ -218,18 +218,14 @@ const styles = StyleSheet.create({
   ===================================================== */
 
   selectContainer: {
-    minHeight: 46,
-
+    height: 52,
+    minHeight: 52,
     borderWidth: 1,
     borderColor: '#CBD5E1',
-
-    borderRadius: 9,
-
+    borderRadius: 10,
     backgroundColor: '#FFFFFF',
-
-    overflow: 'hidden',
-
     justifyContent: 'center',
+    overflow: 'hidden',
   },
 
   selectError: {
@@ -237,13 +233,8 @@ const styles = StyleSheet.create({
   },
 
   picker: {
-    height: 46,
-
+    height: 52,
     width: '100%',
-
-    color: '#172033',
-
-    fontSize: 13,
   },
 
   dropdownLoading: {
@@ -412,6 +403,48 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.55,
   },
+
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+
+  logo: {
+    width: 180,
+    height: 70,
+  },
+  
+  photoPickerButton: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+
+  photoPickerButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+
+  studentPhotoPreview: {
+    width: 140,
+    height: 140,
+    borderRadius: 10,
+    marginTop: 12,
+    alignSelf: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+
+  pickerItem: {
+    fontSize: 14,
+    color: '#0F172A',
+  },
+
 });
 
 export default styles;

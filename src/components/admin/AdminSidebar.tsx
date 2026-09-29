@@ -1,5 +1,5 @@
-import React from 'react';
 import {
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -24,6 +24,7 @@ type Props = {
   onCloseMobile?: () => void;
 };
 
+const MVA_ONE_LOGO = require('../../../assets/images/mva-one-logo.png');
 const menuItems: MenuItem[] = [
   {
     key: 'dashboard',
@@ -33,10 +34,10 @@ const menuItems: MenuItem[] = [
     key: 'student-records',
     label: 'Student Records',
   },
-  {
-    key: 'manage-students',
-    label: 'Manage Students',
-  },
+  // {
+  //   key: 'manage-students',
+  //   label: 'Manage Students',
+  // },
   {
     key: 'manage-users',
     label: 'Manage Users',
@@ -87,14 +88,22 @@ export default function AdminSidebar({
         {/* DRAWER */}
         <View style={styles.mobileSidebar}>
           <View style={styles.mobileBrand}>
-            <View>
-              <Text style={styles.brandTitle}>
-                MVA-ONE
-              </Text>
+            <View style={styles.brand}>
+              <Image
+                source={MVA_ONE_LOGO}
+                style={styles.logo}
+                resizeMode="contain"
+              />
 
-              <Text style={styles.brandSubtitle}>
-                ADMIN PORTAL
-              </Text>
+              <View style={styles.brandText}>
+                <Text style={styles.brandTitle}>
+                  MVA-ONE
+                </Text>
+
+                <Text style={styles.brandSubtitle}>
+                  ADMIN PORTAL
+                </Text>
+              </View>
             </View>
 
             {/* CLOSE */}
@@ -181,14 +190,22 @@ export default function AdminSidebar({
    */
   return (
     <View style={styles.sidebar}>
-      <View style={styles.brand}>
-        <Text style={styles.brandTitle}>
-          MVA-ONE
-        </Text>
+      <View style={styles.mobileBrandInfo}>
+        <Image
+          source={MVA_ONE_LOGO}
+          style={styles.mobileLogo}
+          resizeMode="contain"
+        />
 
-        <Text style={styles.brandSubtitle}>
-          ADMIN PORTAL
-        </Text>
+        <View>
+          <Text style={styles.brandTitle}>
+            MVA-ONE
+          </Text>
+
+          <Text style={styles.brandSubtitle}>
+            ADMIN PORTAL
+          </Text>
+        </View>
       </View>
 
       <ScrollView
@@ -430,5 +447,26 @@ const styles = StyleSheet.create({
     fontSize: 27,
     fontWeight: '300',
     lineHeight: 30,
+  },
+
+  logo: {
+    width: 58,
+    height: 58,
+    marginBottom: 12,
+  },
+
+  brandText: {
+    alignItems: 'flex-start',
+  },
+
+  mobileBrandInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  mobileLogo: {
+    width: 52,
+    height: 52,
+    marginRight: 12,
   },
 });

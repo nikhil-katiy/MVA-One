@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,18 +11,17 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ManageUserOptions from '../components/admin/role-users/ManageUserOptions';
-import TeacherManagement from '../components/admin/role-users/TeacherManagement';
-import StaffManagement from '../components/admin/role-users/StaffManagement';
 import ParentManagement from '../components/admin/role-users/ParentManagement';
+import StaffManagement from '../components/admin/role-users/StaffManagement';
+import TeacherManagement from '../components/admin/role-users/TeacherManagement';
+import { getDashboardCounts } from '../services/dashboardService';
 
 import AdminSidebar from '../components/admin/AdminSidebar';
-import StudentRecordsScreen from '../components/admin/student-records/StudentRecordsScreen';
-import StudentRecordsHome from '../components/admin/student-records/StudentRecordsHome';
 import AddStudentScreen from '../components/admin/student-records/AddStudentScreen';
 import StudentDetailsScreen from '../components/admin/student-records/StudentDetailsScreen';
+import StudentRecordsHome from '../components/admin/student-records/StudentRecordsHome';
 import {
   getAdminSession,
   logoutAdmin,
@@ -50,12 +50,12 @@ export default function AdminDashboardScreen() {
     getAdminSession()
       .then((session) => {
         if (active && !session) {
-          router.replace('/admin-login');
+          router.replace('/portal-login');
         }
       })
       .catch(() => {
         if (active) {
-          router.replace('/admin-login');
+          router.replace('/portal-login');
         }
       });
 
@@ -64,11 +64,66 @@ export default function AdminDashboardScreen() {
     };
   }, [router]);
 
+  useEffect(() => {
+    let active = true;
+
+    const loadDashboardCounts = async () => {
+      try {
+        setDashboardLoading(true);
+        setDashboardError(null);
+
+        const counts = await getDashboardCounts();
+
+        if (active) {
+          setDashboardCounts(counts);
+        }
+      } catch (error) {
+        console.error('DASHBOARD COUNTS ERROR:', error);
+
+        if (active) {
+          setDashboardError(
+            error instanceof Error
+              ? error.message
+              : 'Unable to load dashboard counts.',
+          );
+        }
+      } finally {
+        if (active) {
+          setDashboardLoading(false);
+        }
+      }
+    };
+
+    loadDashboardCounts();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const isMobile = width < 900;
   const isAndroidMobile =
     Platform.OS === 'android' && width < 700;
 
-  const handleNavigate = (key: string) => {
+const [dashboardCounts, setDashboardCounts] = useState({
+  students: 0,
+  staff: 0,
+  families: 0,
+  teachers: 0,
+});
+
+const [dashboardLoading, setDashboardLoading] =
+  useState(true);
+
+const [dashboardError, setDashboardError] =
+  useState<string | null>(null);
+
+const [manageUserScreen, setManageUserScreen] =
+  useState<'options' | 'teacher' | 'staff' | 'parent'>(
+    'options'
+  );
+
+const handleNavigate = (key: string) => {
   setActiveKey(key);
 
   if (key === 'manage-users') {
@@ -76,18 +131,13 @@ export default function AdminDashboardScreen() {
   }
 };
 
-  const [manageUserScreen, setManageUserScreen] =
-  useState<'options' | 'teacher' | 'staff' | 'parent'>(
-    'options'
-  );
-
   const handleLogout = async () => {
     try {
       setLoggingOut(true);
 
       await logoutAdmin();
 
-      router.replace('/admin-login');
+      router.replace('/portal-login');
     } catch (error) {
       console.error(
         'ADMIN LOGOUT ERROR:',
@@ -239,7 +289,7 @@ export default function AdminDashboardScreen() {
             <View style={styles.statsGrid}>
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>
-                  —
+                  {dashboardLoading ? '...' : dashboardCounts.students}
                 </Text>
 
                 <Text style={styles.statLabel}>
@@ -249,7 +299,7 @@ export default function AdminDashboardScreen() {
 
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>
-                  —
+                  {dashboardLoading ? '...' : dashboardCounts.teachers}
                 </Text>
 
                 <Text style={styles.statLabel}>
@@ -259,8 +309,8 @@ export default function AdminDashboardScreen() {
 
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>
-                  —
-                </Text>
+                {dashboardLoading ? '...' : dashboardCounts.staff}
+              </Text>
 
                 <Text style={styles.statLabel}>
                   Staff
@@ -269,11 +319,11 @@ export default function AdminDashboardScreen() {
 
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>
-                  —
-                </Text>
+                {dashboardLoading ? '...' : dashboardCounts.families}
+              </Text>
 
                 <Text style={styles.statLabel}>
-                  Parents
+                  Families
                 </Text>
               </View>
             </View>

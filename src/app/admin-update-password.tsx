@@ -117,7 +117,7 @@ export default function AdminUpdatePasswordScreen() {
 
         <Pressable
           disabled={loading}
-          onPress={() => router.replace('/admin-login')}
+          onPress={() => router.replace('/portal-login')}
           style={styles.backButton}
         >
           <Text style={styles.backText}>Back to Admin Login</Text>

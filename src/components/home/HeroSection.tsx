@@ -65,13 +65,12 @@ export default function HeroSection() {
             <Pressable
               style={[
                 styles.primaryButton,
-                isMobile &&
-                  styles.buttonMobile,
+                isMobile && styles.buttonMobile,
               ]}
-              onPress={() => router.push('/login')}
+              onPress={() => router.push('/portal-login')}
             >
               <Text style={styles.primaryButtonText}>
-                Student Login
+                Portal Login
               </Text>
             </Pressable>
 

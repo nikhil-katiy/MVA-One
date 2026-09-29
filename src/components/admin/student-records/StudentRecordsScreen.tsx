@@ -5,8 +5,15 @@ import React, {
   useState,
 } from 'react';
 
+import { supabase } from '@/lib/supabase';
+import {
+  getStudents,
+  Student,
+} from '@/services/studentService';
+import { Picker } from '@react-native-picker/picker';
 import {
   ActivityIndicator,
+  Image,
   Platform,
   Pressable,
   RefreshControl,
@@ -17,11 +24,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-
-import {
-  getStudents,
-  Student,
-} from '@/services/studentService';
+import AddStudentScreen from './AddStudentScreen';
 
 type Props = {
   onBack?: () => void;
@@ -102,14 +105,15 @@ export default function StudentRecordsScreen({
    * Android mobile only.
    * Tablet remains on desktop/table layout.
    */
-  const isAndroidMobile =
-    Platform.OS === 'android' && width < 700;
+  const isAndroidMobile = width < 700;
 
   const isWeb = Platform.OS === 'web';
 
-  const [students, setStudents] = useState<Student[]>(
-    []
-  );
+  const [students, setStudents] = useState<Student[]>([]);
+  const [genders, setGenders] = useState<Array<{ id: number; gender_name: string | null }>>([]);
+  const [casteCategories, setCasteCategories] = useState<Array<{ id: number; category_code: string; category_name: string }>>([]);
+  const [classes, setClasses] = useState<Array<{ id: number; class_name: string }>>([]);
+  const [studentClasses, setStudentClasses] = useState<Array<{ student_id: number; class_id: number; academic_year_id: number }>>([]);
 
   const [loading, setLoading] =
     useState(true);
@@ -137,6 +141,12 @@ export default function StudentRecordsScreen({
 
   const [selectedStudent, setSelectedStudent] =
     useState<Student | null>(null);
+  const [editingStudent, setEditingStudent] =
+    useState<Student | null>(null);
+
+   
+
+  
 
   /* =======================================================
      LOAD STUDENTS
@@ -147,13 +157,24 @@ export default function StudentRecordsScreen({
       try {
         setError('');
 
-        const data = await getStudents();
+        const [studentData, genderResult, casteCategoryResult, classResult, classDetailResult] = await Promise.all([
+          getStudents(),
+          supabase.from('genders').select('id,gender_name').order('id', { ascending: true }),
+          supabase.from('caste_categories').select('id,category_code,category_name').order('id', { ascending: true }),
+          supabase.from('classes').select('id,class_name').order('id', { ascending: true }),
+          supabase.from('student_class_details').select('student_id,class_id,academic_year_id').order('academic_year_id', { ascending: false }),
+        ]);
 
-        setStudents(
-          Array.isArray(data)
-            ? data
-            : []
-        );
+        if (genderResult.error) throw genderResult.error;
+        if (casteCategoryResult.error) throw casteCategoryResult.error;
+        if (classResult.error) throw classResult.error;
+        if (classDetailResult.error) throw classDetailResult.error;
+
+        setStudents(Array.isArray(studentData) ? studentData : []);
+        setGenders(genderResult.data ?? []);
+        setCasteCategories(casteCategoryResult.data ?? []);
+        setClasses(classResult.data ?? []);
+        setStudentClasses(classDetailResult.data ?? []);
       } catch (err) {
         console.error(
           'STUDENT RECORDS ERROR:',
@@ -183,30 +204,66 @@ export default function StudentRecordsScreen({
   };
 
   /* =======================================================
-     FILTER OPTIONS
+     MASTER DATA MAPS
   ======================================================= */
 
-  const classes = useMemo(() => {
-    const values = students
-      .map((student) =>
-        displayValue(
-          student.joining_class
-        )
-      )
-      .filter(
-        (value) => value !== '-'
-      );
+  const genderMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    genders.forEach((row) => {
+      map[row.id] = row.gender_name ?? '';
+    });
+    return map;
+  }, [genders]);
 
-    const unique = Array.from(
-      new Set(values)
-    ).sort((a, b) =>
-      a.localeCompare(b, undefined, {
-        numeric: true,
-      })
-    );
+  const casteCategoryMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    casteCategories.forEach((row) => {
+      map[row.id] = row.category_name;
+    });
+    return map;
+  }, [casteCategories]);
 
-    return ['ALL', ...unique];
-  }, [students]);
+  const getCasteCategoryName = useCallback((student: Student) => {
+    return student.caste_category_id
+      ? casteCategoryMap[student.caste_category_id] ?? ''
+      : '';
+  }, [casteCategoryMap]);
+
+  const classMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    classes.forEach((row) => {
+      map[row.id] = row.class_name;
+    });
+    return map;
+  }, [classes]);
+
+  const studentClassMap = useMemo(() => {
+    const map: Record<number, number> = {};
+    [...studentClasses]
+      .sort((a, b) => b.academic_year_id - a.academic_year_id)
+      .forEach((row) => {
+        if (map[row.student_id] === undefined) {
+          map[row.student_id] = row.class_id;
+        }
+      });
+    return map;
+  }, [studentClasses]);
+
+  const getGenderName = useCallback((student: Student) => {
+    return student.gender_id ? genderMap[student.gender_id] ?? '' : '';
+  }, [genderMap]);
+
+  const getClassName = useCallback((student: Student) => {
+    const classId = studentClassMap[student.id];
+    return classId !== undefined
+      ? classMap[classId] ?? student.joining_class ?? ''
+      : student.joining_class ?? '';
+  }, [classMap, studentClassMap]);
+
+  const classOptions = useMemo(
+    () => ['ALL', ...classes.map((item) => String(item.id))],
+    [classes]
+  );
 
   /* =======================================================
      FILTER STUDENTS
@@ -245,15 +302,11 @@ export default function StudentRecordsScreen({
 
         const matchesClass =
           classFilter === 'ALL' ||
-          normalize(
-            student.joining_class
-          ) === normalize(classFilter);
+          String(studentClassMap[student.id] ?? '') === classFilter;
 
         const matchesGender =
           genderFilter === 'ALL' ||
-          normalize(
-            student.gender
-          ) === normalize(genderFilter);
+          normalize(getGenderName(student)) === normalize(genderFilter);
 
         const matchesType =
           typeFilter === 'ALL' ||
@@ -283,6 +336,8 @@ export default function StudentRecordsScreen({
     genderFilter,
     typeFilter,
     statusFilter,
+    getGenderName,
+    studentClassMap,
   ]);
 
   /* =======================================================
@@ -350,6 +405,23 @@ export default function StudentRecordsScreen({
   };
 
   /* =======================================================
+     EDIT STUDENT
+  ======================================================= */
+
+  if (editingStudent) {
+    return (
+      <AddStudentScreen
+        editStudent={editingStudent}
+        onBack={async () => {
+          setEditingStudent(null);
+          setSelectedStudent(null);
+          await refreshStudents();
+        }}
+      />
+    );
+  }
+
+  /* =======================================================
      SELECTED STUDENT PROFILE
   ======================================================= */
 
@@ -357,9 +429,16 @@ export default function StudentRecordsScreen({
     return (
       <StudentProfile
         student={selectedStudent}
+        genderName={getGenderName(selectedStudent)}
+        casteCategoryName={getCasteCategoryName(selectedStudent)}
+        className={getClassName(selectedStudent)}
         onBack={() =>
           setSelectedStudent(null)
         }
+        onUpdate={(student) => {
+          setSelectedStudent(null);
+          setEditingStudent(student);
+        }}
       />
     );
   }
@@ -643,47 +722,43 @@ export default function StudentRecordsScreen({
 
           <ScrollView
             horizontal
-            showsHorizontalScrollIndicator={
-              false
-            }
-            contentContainerStyle={
-              styles.filtersScroll
-            }
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filtersScroll}
           >
             <FilterGroup
               label="Class"
               value={classFilter}
-              options={classes}
-              onChange={
-                setClassFilter
-              }
+              options={classOptions}
+              optionLabels={[
+                'All Classes',
+                ...classes.map((item) => item.class_name),
+              ]}
+              onChange={setClassFilter}
             />
 
             <FilterGroup
               label="Gender"
               value={genderFilter}
-              options={[
-                'ALL',
-                'male',
-                'female',
-                'other',
+              options={['ALL', 'male', 'female', 'others']}
+              optionLabels={[
+                'All Genders',
+                'Male',
+                'Female',
+                'Others',
               ]}
-              onChange={
-                setGenderFilter
-              }
+              onChange={setGenderFilter}
             />
 
             <FilterGroup
               label="Student Type"
               value={typeFilter}
-              options={[
-                'ALL',
-                'day boarder',
-                'boarder',
+              options={['ALL', 'DAY_BOARDER', 'HOSTELER']}
+              optionLabels={[
+                'All Types',
+                'Day Boarder',
+                'Hosteler',
               ]}
-              onChange={
-                setTypeFilter
-              }
+              onChange={setTypeFilter}
             />
 
             <FilterGroup
@@ -691,12 +766,23 @@ export default function StudentRecordsScreen({
               value={statusFilter}
               options={[
                 'ALL',
-                'active',
-                'inactive',
+                'PENDING',
+                'ACTIVE',
+                'WITHDRAWN',
+                'ALUMNI',
+                'INACTIVE',
+                'UNKNOWN',
               ]}
-              onChange={
-                setStatusFilter
-              }
+              optionLabels={[
+                'All Status',
+                'Pending',
+                'Active',
+                'Withdrawn',
+                'Alumni',
+                'Inactive',
+                'Unknown',
+              ]}
+              onChange={setStatusFilter}
             />
 
             <Pressable
@@ -707,11 +793,7 @@ export default function StudentRecordsScreen({
                   styles.resetButtonDisabled,
               ]}
             >
-              <Text
-                style={
-                  styles.resetButtonText
-                }
-              >
+              <Text style={styles.resetButtonText}>
                 Reset
               </Text>
             </Pressable>
@@ -890,6 +972,8 @@ export default function StudentRecordsScreen({
                     )}
                     student={student}
                     index={index}
+                    genderName={getGenderName(student)}
+                    className={getClassName(student)}
                     onView={() =>
                       setSelectedStudent(
                         student
@@ -914,10 +998,11 @@ export default function StudentRecordsScreen({
               filteredStudents
             }
             onView={(student) =>
-              setSelectedStudent(
-                student
-              )
+              setSelectedStudent(student)
             }
+            genderMap={genderMap}
+            classMap={classMap}
+            studentClassMap={studentClassMap}
             isWeb={isWeb}
           />
         ) : null}
@@ -980,58 +1065,42 @@ type FilterProps = {
   label: string;
   value: string;
   options: string[];
-  onChange: (
-    value: string
-  ) => void;
+  optionLabels?: string[];
+  onChange: (value: string) => void;
 };
 
 function FilterGroup({
   label,
   value,
   options,
+  optionLabels,
   onChange,
 }: FilterProps) {
   return (
-    <View
-      style={styles.filterGroup}
-    >
-      <Text
-        style={styles.filterLabel}
-      >
+    <View style={styles.filterGroup}>
+      <Text style={styles.filterLabel}>
         {label}
       </Text>
 
-      <View
-        style={styles.filterOptions}
-      >
-        {options.map((option) => {
-          const active =
-            value === option;
-
-          return (
-            <Pressable
+      <View style={styles.filterSelectContainer}>
+        <Picker
+          selectedValue={value}
+          onValueChange={(itemValue) =>
+            onChange(String(itemValue))
+          }
+          style={styles.filterPicker}
+        >
+          {options.map((option, index) => (
+            <Picker.Item
               key={option}
-              onPress={() =>
-                onChange(option)
+              label={
+                optionLabels?.[index] ??
+                formatLabel(option)
               }
-              style={[
-                styles.filterChip,
-                active &&
-                  styles.filterChipActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  active &&
-                    styles.filterChipTextActive,
-                ]}
-              >
-                {formatLabel(option)}
-              </Text>
-            </Pressable>
-          );
-        })}
+              value={option}
+            />
+          ))}
+        </Picker>
       </View>
     </View>
   );
@@ -1043,9 +1112,15 @@ function FilterGroup({
 
 function StudentTable({
   students,
+  genderMap,
+  classMap,
+  studentClassMap,
   onView,
 }: {
   students: Student[];
+  genderMap: Record<number, string>;
+  classMap: Record<number, string>;
+  studentClassMap: Record<number, number>;
   onView: (
     student: Student
   ) => void;
@@ -1054,6 +1129,14 @@ function StudentTable({
   if (students.length === 0) {
     return <EmptyState />;
   }
+
+  const getClassName = (student: Student) => {
+    const classId = studentClassMap[student.id];
+    return classId !== undefined ? classMap[classId] ?? student.joining_class ?? '' : student.joining_class ?? '';
+  };
+
+  const getGenderName = (student: Student) =>
+    student.gender_id ? genderMap[student.gender_id] ?? '' : '';
 
   return (
     <View
@@ -1227,15 +1310,13 @@ function StudentTable({
 
                   <TableCell
                     text={displayValue(
-                      student.joining_class
+                      getClassName(student)
                     )}
                     width={100}
                   />
 
                   <TableCell
-                    text={formatLabel(
-                      student.gender
-                    )}
+                    text={formatLabel(getGenderName(student))}
                     width={110}
                   />
 
@@ -1320,10 +1401,14 @@ function StudentTable({
 function MobileStudentCard({
   student,
   index,
+  genderName,
+  className,
   onView,
 }: {
   student: Student;
   index: number;
+  genderName: string;
+  className: string;
   onView: () => void;
 }) {
   const fullName =
@@ -1414,15 +1499,13 @@ function MobileStudentCard({
         <MobileInfo
           label="Class"
           value={displayValue(
-            student.joining_class
+            className
           )}
         />
 
         <MobileInfo
           label="Gender"
-          value={formatLabel(
-            student.gender
-          )}
+          value={formatLabel(genderName)}
         />
 
         <MobileInfo
@@ -1659,346 +1742,322 @@ function EmptyState() {
    STUDENT PROFILE
 ========================================================= */
 
+type FamilyProfile = {
+  id: number;
+  family_name: string | null;
+  father_name: string | null;
+  father_mobile: string | null;
+  father_email: string | null;
+  father_occupation: string | null;
+  mother_name: string | null;
+  mother_mobile: string | null;
+  mother_email: string | null;
+  mother_occupation: string | null;
+  guardian_name: string | null;
+  guardian_mobile: string | null;
+  guardian_email: string | null;
+  guardian_relation: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+};
+
+type AcademicProfile = {
+  id: number;
+  academic_year_id: number;
+  class_id: number;
+  section_id: number;
+  class_teacher_id: number | null;
+  roll_number: number | string | null;
+  joining_class: boolean | null;
+  class_teacher_name: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type RelatedProfile = Record<string, unknown>;
+
+function formatProfileFieldLabel(key: string): string {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function formatProfileFieldValue(value: unknown): string | number | boolean | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number' || typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function DynamicProfileRows({ record }: { record: RelatedProfile | null }) {
+  if (!record) {
+    return <InfoRow label="Information" value="No record found" />;
+  }
+
+  const entries = Object.entries(record);
+
+  if (entries.length === 0) {
+    return <InfoRow label="Information" value="No information available" />;
+  }
+
+  return (
+    <>
+      {entries.map(([key, value]) => (
+        <InfoRow
+          key={key}
+          label={formatProfileFieldLabel(key)}
+          value={formatProfileFieldValue(value)}
+          full={typeof value === 'string' && value.length > 60}
+        />
+      ))}
+    </>
+  );
+}
+
 function StudentProfile({
   student,
+  genderName,
+  casteCategoryName,
+  className,
   onBack,
+  onUpdate,
 }: {
   student: Student;
+  genderName: string;
+  casteCategoryName: string;
+  className: string;
   onBack: () => void;
+  onUpdate?: (student: Student) => void;
 }) {
-  const { width } =
-    useWindowDimensions();
+  const { width } = useWindowDimensions();
+  const isAndroidMobile = width < 700;
+  const fullName = formatName(student);
 
-  const isAndroidMobile =
-    Platform.OS === 'android' &&
-    width < 700;
+  const [photoExpanded, setPhotoExpanded] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [family, setFamily] = useState<FamilyProfile | null>(null);
+  const [academic, setAcademic] = useState<AcademicProfile | null>(null);
+  const [hostel, setHostel] = useState<RelatedProfile | null>(null);
+  const [health, setHealth] = useState<RelatedProfile | null>(null);
+  const [bank, setBank] = useState<RelatedProfile | null>(null);
+  const [profileDataLoading, setProfileDataLoading] = useState(false);
 
-  const fullName =
-    formatName(student);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadStudentPhoto() {
+      setPhotoUrl(null);
+      if (!student.student_image) {
+        setPhotoLoading(false);
+        return;
+      }
+      try {
+        setPhotoLoading(true);
+        const { data, error } = await supabase.storage
+          .from('st_photos')
+          .createSignedUrl(student.student_image, 60 * 60);
+        if (error) throw error;
+        if (!cancelled) setPhotoUrl(data?.signedUrl ?? null);
+      } catch (error) {
+        console.error('STUDENT PROFILE PHOTO ERROR:', error);
+        if (!cancelled) setPhotoUrl(null);
+      } finally {
+        if (!cancelled) setPhotoLoading(false);
+      }
+    }
+    loadStudentPhoto();
+    return () => { cancelled = true; };
+  }, [student.student_image]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProfileDetails() {
+      try {
+        setProfileDataLoading(true);
+
+        const familyPromise = student.family_id
+          ? supabase.from('families').select(`
+              id, family_name,
+              father_name, father_mobile, father_email, father_occupation,
+              mother_name, mother_mobile, mother_email, mother_occupation,
+              guardian_name, guardian_mobile, guardian_email, guardian_relation,
+              address, city, state, pincode
+            `).eq('id', student.family_id).maybeSingle()
+          : Promise.resolve({ data: null, error: null });
+
+        const academicPromise = supabase.from('student_class_details').select(`
+          id, academic_year_id, class_id, section_id,
+          class_teacher_id, roll_number, joining_class,
+          class_teacher_name, created_at, updated_at
+        `).eq('student_id', student.id)
+          .order('academic_year_id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        // These three related tables are intentionally read with select('*') so the
+        // profile does not guess column names. Their complete current records are
+        // rendered dynamically below.
+        const hostelPromise = supabase
+          .from('student_hostel_details')
+          .select('*')
+          .eq('student_id', student.id)
+          .order('academic_year_id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const healthPromise = supabase
+          .from('student_health')
+          .select('*')
+          .eq('student_id', student.id)
+          .maybeSingle();
+
+        const bankPromise = supabase
+          .from('student_bank_details')
+          .select('*')
+          .eq('student_id', student.id)
+          .maybeSingle();
+
+        const [familyResult, academicResult, hostelResult, healthResult, bankResult] =
+          await Promise.all([
+            familyPromise,
+            academicPromise,
+            hostelPromise,
+            healthPromise,
+            bankPromise,
+          ]);
+
+        if (familyResult.error) console.error('STUDENT PROFILE FAMILY ERROR:', familyResult.error);
+        if (academicResult.error) console.error('STUDENT PROFILE ACADEMIC ERROR:', academicResult.error);
+        if (hostelResult.error) console.error('STUDENT PROFILE HOSTEL ERROR:', hostelResult.error);
+        if (healthResult.error) console.error('STUDENT PROFILE HEALTH ERROR:', healthResult.error);
+        if (bankResult.error) console.error('STUDENT PROFILE BANK ERROR:', bankResult.error);
+
+        if (!cancelled) {
+          setFamily((familyResult.data as FamilyProfile | null) ?? null);
+          setAcademic((academicResult.data as AcademicProfile | null) ?? null);
+          setHostel((hostelResult.data as RelatedProfile | null) ?? null);
+          setHealth((healthResult.data as RelatedProfile | null) ?? null);
+          setBank((bankResult.data as RelatedProfile | null) ?? null);
+        }
+      } catch (error) {
+        console.error('STUDENT PROFILE DETAILS ERROR:', error);
+      } finally {
+        if (!cancelled) setProfileDataLoading(false);
+      }
+    }
+    loadProfileDetails();
+    return () => { cancelled = true; };
+  }, [student.id, student.family_id]);
 
   return (
     <ScrollView
-      style={[
-        styles.profileContainer,
-        isAndroidMobile &&
-          styles.profileContainerMobile,
-      ]}
-      contentContainerStyle={
-        styles.profileContent
-      }
-      showsVerticalScrollIndicator={
-        false
-      }
+      style={[styles.profileContainer, isAndroidMobile && styles.profileContainerMobile]}
+      contentContainerStyle={styles.profileContent}
+      showsVerticalScrollIndicator={false}
     >
-      {/* BACK */}
-
-      <Pressable
-        onPress={onBack}
-        style={[
-          styles.profileBackButton,
-          isAndroidMobile &&
-            styles.profileBackButtonMobile,
-        ]}
-      >
-        <Text
-          style={
-            styles.profileBackText
-          }
-        >
-          ‹
-        </Text>
-
-        <Text
-          style={
-            styles.profileBackLabel
-          }
-        >
-          Student Records
-        </Text>
+      <Pressable onPress={onBack} style={[styles.profileBackButton, isAndroidMobile && styles.profileBackButtonMobile]}>
+        <Text style={styles.profileBackText}>‹</Text>
+        <Text style={styles.profileBackLabel}>Student Records</Text>
       </Pressable>
 
-      {/* PROFILE HEADER */}
-
-      <View
-        style={[
-          styles.profileHero,
-          isAndroidMobile &&
-            styles.profileHeroMobile,
-        ]}
-      >
-        <View
-          style={
-            styles.profileAvatar
-          }
-        >
-          <Text
-            style={
-              styles.profileAvatarText
-            }
-          >
-            {getInitials(
-              student
+      <View style={[styles.profileHero, isAndroidMobile && styles.profileHeroMobile]}>
+        <Pressable onPress={() => photoUrl && setPhotoExpanded(prev => !prev)}>
+          <View style={[styles.profileAvatar, photoExpanded && styles.profileAvatarExpanded]}>
+            {photoLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : photoUrl ? (
+              <Image source={{ uri: photoUrl }} style={styles.profileAvatarImage} resizeMode="cover" />
+            ) : (
+              <Text style={styles.profileAvatarText}>{getInitials(student)}</Text>
             )}
+          </View>
+        </Pressable>
+
+        <View style={styles.profileHeroContent}>
+          <Text style={[styles.profileName, isAndroidMobile && styles.profileNameMobile]}>
+            {displayValue(fullName)}
           </Text>
-        </View>
-
-        <View
-          style={
-            styles.profileHeroContent
-          }
-        >
-          <Text
-            style={[
-              styles.profileName,
-              isAndroidMobile &&
-                styles.profileNameMobile,
-            ]}
-          >
-            {displayValue(
-              fullName
-            )}
-          </Text>
-
-          <Text
-            style={
-              styles.profileMva
-            }
-          >
-            MVA ID ·{' '}
-            {displayValue(
-              student.mva_id
-            )}
-          </Text>
-
-          <View
-            style={
-              styles.profileHeroMeta
-            }
-          >
-            <StatusBadge
-              status={
-                normalize(
-                  student.status
-                ) || 'unknown'
-              }
-            />
-
-            <Text
-              style={
-                styles.profileClass
-              }
-            >
-              Class{' '}
-              {displayValue(
-                student.joining_class
-              )}
-            </Text>
+          <View style={styles.profileMvaRow}>
+            <Text style={styles.profileMva}>MVA ID · {displayValue(student.mva_id)}</Text>
+            {onUpdate ? (
+              <Pressable onPress={() => onUpdate(student)} style={({ pressed }) => [styles.updateProfileButton, pressed && styles.updateProfileButtonPressed]}>
+                <Text style={styles.updateProfileButtonText}>Update Profile</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={styles.profileHeroMeta}>
+            <StatusBadge status={normalize(student.status) || 'unknown'} />
+            <Text style={styles.profileClass}>Class {displayValue(className)}</Text>
           </View>
         </View>
       </View>
 
-      {/* BASIC */}
-
-      <ProfileSection
-        title="Basic Information"
-        subtitle="Personal details"
-      >
-        <InfoRow
-          label="First Name"
-          value={
-            student.first_name
-          }
-        />
-
-        <InfoRow
-          label="Middle Name"
-          value={
-            student.middle_name
-          }
-        />
-
-        <InfoRow
-          label="Last Name"
-          value={
-            student.last_name
-          }
-        />
-
-        <InfoRow
-          label="Date of Birth"
-          value={
-            student.date_of_birth
-          }
-        />
-
-        <InfoRow
-          label="Gender"
-          value={
-            formatLabel(
-              student.gender
-            )
-          }
-        />
-
-        <InfoRow
-          label="Nationality"
-          value={
-            student.nationality
-          }
-        />
+      {/* Basic Information = complete students table information */}
+      <ProfileSection title="Basic Information" subtitle="Complete student information" defaultOpen collapsible={false}>
+        <InfoRow label="MVA ID" value={student.mva_id} />
+        <InfoRow label="First Name" value={student.first_name} />
+        <InfoRow label="Middle Name" value={student.middle_name} />
+        <InfoRow label="Last Name" value={student.last_name} />
+        <InfoRow label="Date of Birth" value={student.date_of_birth} />
+        <InfoRow label="Gender" value={formatLabel(genderName)} />
+        <InfoRow label="Date of Admission" value={student.date_of_admission} />
+        <InfoRow label="Joining Academic Year" value={student.joining_academic_year} />
+        <InfoRow label="Joining Class" value={student.joining_class || className} />
+        <InfoRow label="Student Type" value={formatLabel(student.student_type)} />
+        <InfoRow label="Residential Address" value={student.class_residential_address} full />
+        <InfoRow label="Pincode" value={student.pincode} />
+        <InfoRow label="Aadhaar Number" value={student.aadhaar_number} />
+        <InfoRow label="Previous School" value={student.previous_school} />
+        <InfoRow label="Nationality" value={student.nationality} />
+        <InfoRow label="Staff Child" value={student.staff_child === true ? 'Yes' : student.staff_child === false ? 'No' : null} />
+        <InfoRow label="Caste Category" value={casteCategoryName || student.caste_category} />
+        <InfoRow label="Caste" value={student.caste} />
+        <InfoRow label="Email" value={student.email} />
+        <InfoRow label="Mobile" value={student.mobile} />
+        <InfoRow label="Status" value={formatLabel(student.status)} />
       </ProfileSection>
 
-      {/* ADMISSION */}
-
-      <ProfileSection
-        title="Admission Information"
-        subtitle="Academic and admission details"
-      >
-        <InfoRow
-          label="MVA ID"
-          value={
-            student.mva_id
-          }
-        />
-
-        <InfoRow
-          label="Family ID"
-          value={
-            student.family_id
-              ? String(
-                  student.family_id
-                )
-              : null
-          }
-        />
-
-        <InfoRow
-          label="Admission Date"
-          value={
-            student.date_of_admission
-          }
-        />
-
-        <InfoRow
-          label="Joining Academic Year"
-          value={
-            student.joining_academic_year
-          }
-        />
-
-        <InfoRow
-          label="Joining Class"
-          value={
-            student.joining_class
-          }
-        />
-
-        <InfoRow
-          label="Student Type"
-          value={
-            formatLabel(
-              student.student_type
-            )
-          }
-        />
-
-        <InfoRow
-          label="Status"
-          value={
-            formatLabel(
-              student.status
-            )
-          }
-        />
+      <ProfileSection title="Hostel Information" subtitle={profileDataLoading ? 'Loading hostel details...' : 'Hostel record for the latest academic year'}>
+        <DynamicProfileRows record={hostel} />
       </ProfileSection>
 
-      {/* CONTACT */}
-
-      <ProfileSection
-        title="Contact Information"
-        subtitle="Student contact details"
-      >
-        <InfoRow
-          label="Email"
-          value={
-            student.email
-          }
-        />
-
-        <InfoRow
-          label="Mobile"
-          value={
-            student.mobile
-          }
-        />
-
-        <InfoRow
-          label="Address"
-          value={
-            student.class_residential_address
-          }
-          full
-        />
-
-        <InfoRow
-          label="Pincode"
-          value={
-            student.pincode
-          }
-        />
+      <ProfileSection title="Health Information" subtitle={profileDataLoading ? 'Loading health details...' : 'Student health and emergency information'}>
+        <DynamicProfileRows record={health} />
       </ProfileSection>
 
-      {/* OTHER */}
-
-      <ProfileSection
-        title="Other Information"
-        subtitle="Additional student information"
-      >
-        <InfoRow
-          label="Previous School"
-          value={
-            student.previous_school
-          }
-        />
-
-        <InfoRow
-          label="Caste Category"
-          value={
-            student.caste_category
-          }
-        />
-
-        <InfoRow
-          label="Caste"
-          value={
-            student.caste
-          }
-        />
-
-    <InfoRow
-  label="Staff Child"
-  value={
-    student.staff_child === true
-      ? 'Yes'
-      : student.staff_child === false
-      ? 'No'
-      : '-'
-  }
-/>
-
-        <InfoRow
-          label="Aadhaar Number"
-          value={
-            student.aadhaar_number
-          }
-        />
+      <ProfileSection title="Family Information" subtitle={profileDataLoading ? 'Loading family details...' : 'Parent, guardian and family details'}>
+        <InfoRow label="Family ID" value={family?.id ?? student.family_id} />
+        <InfoRow label="Family Name" value={family?.family_name} />
+        <InfoRow label="Father Name" value={family?.father_name} />
+        <InfoRow label="Father Mobile" value={family?.father_mobile} />
+        <InfoRow label="Father Email" value={family?.father_email} />
+        <InfoRow label="Father Occupation" value={family?.father_occupation} />
+        <InfoRow label="Mother Name" value={family?.mother_name} />
+        <InfoRow label="Mother Mobile" value={family?.mother_mobile} />
+        <InfoRow label="Mother Email" value={family?.mother_email} />
+        <InfoRow label="Mother Occupation" value={family?.mother_occupation} />
+        <InfoRow label="Guardian Name" value={family?.guardian_name} />
+        <InfoRow label="Guardian Mobile" value={family?.guardian_mobile} />
+        <InfoRow label="Guardian Email" value={family?.guardian_email} />
+        <InfoRow label="Guardian Relation" value={family?.guardian_relation} />
+        <InfoRow label="Family Address" value={family?.address} full />
+        <InfoRow label="Family City" value={family?.city} />
+        <InfoRow label="Family State" value={family?.state} />
+        <InfoRow label="Family Pincode" value={family?.pincode} />
       </ProfileSection>
 
-      <View
-        style={
-          styles.profileBottomSpace
-        }
-      />
+      <ProfileSection title="Bank Details" subtitle={profileDataLoading ? 'Loading bank details...' : 'Student bank information'}>
+        <DynamicProfileRows record={bank} />
+      </ProfileSection>
+
+      <View style={styles.profileBottomSpace} />
     </ScrollView>
   );
 }
@@ -2011,44 +2070,39 @@ function ProfileSection({
   title,
   subtitle,
   children,
+  defaultOpen = false,
+  collapsible = true,
 }: {
   title: string;
   subtitle: string;
   children: React.ReactNode;
+  defaultOpen?: boolean;
+  collapsible?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+
   return (
-    <View
-      style={styles.profileSection}
-    >
-      <View
-        style={
-          styles.profileSectionHeader
-        }
-      >
-        <View>
-          <Text
-            style={
-              styles.profileSectionTitle
-            }
-          >
-            {title}
-          </Text>
-
-          <Text
-            style={
-              styles.profileSectionSubtitle
-            }
-          >
-            {subtitle}
-          </Text>
+    <View style={styles.profileSection}>
+      {collapsible ? (
+        <Pressable onPress={() => setOpen(prev => !prev)} style={({ pressed }) => [styles.profileSectionHeader, pressed && styles.profileSectionHeaderPressed]}>
+          <View style={styles.profileSectionHeaderText}>
+            <Text style={styles.profileSectionTitle}>{title}</Text>
+            <Text style={styles.profileSectionSubtitle}>{subtitle}</Text>
+          </View>
+          <Text style={styles.profileSectionChevron}>{open ? '⌃' : '⌄'}</Text>
+        </Pressable>
+      ) : (
+        <View style={styles.profileSectionHeader}>
+          <View style={styles.profileSectionHeaderText}>
+            <Text style={styles.profileSectionTitle}>{title}</Text>
+            <Text style={styles.profileSectionSubtitle}>{subtitle}</Text>
+          </View>
         </View>
-      </View>
+      )}
 
-      <View
-        style={styles.infoGrid}
-      >
-        {children}
-      </View>
+      {(!collapsible || open) && (
+        <View style={styles.infoGrid}>{children}</View>
+      )}
     </View>
   );
 }
@@ -2063,43 +2117,17 @@ function InfoRow({
   full = false,
 }: {
   label: string;
-  value:
-    | string
-    | number
-    | boolean
-    | null
-    | undefined;
+  value: string | number | boolean | null | undefined;
   full?: boolean;
 }) {
-  let output = '-';
-
-  if (
-    value !== null &&
-    value !== undefined &&
-    String(value).trim() !== ''
-  ) {
-    output = String(value);
-  }
+  const output = value !== null && value !== undefined && String(value).trim() !== ''
+    ? String(value)
+    : '-';
 
   return (
-    <View
-      style={[
-        styles.infoRow,
-        full &&
-          styles.infoRowFull,
-      ]}
-    >
-      <Text
-        style={styles.infoLabel}
-      >
-        {label}
-      </Text>
-
-      <Text
-        style={styles.infoValue}
-      >
-        {output}
-      </Text>
+    <View style={[styles.infoRow, full && styles.infoRowFull]}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{output}</Text>
     </View>
   );
 }
@@ -2438,12 +2466,14 @@ const styles =
     },
 
     filtersScroll: {
+      flexDirection: 'row',
       alignItems: 'flex-end',
       paddingRight: 5,
+      gap: 14,
     },
 
     filterGroup: {
-      marginRight: 15,
+      width: 200,
     },
 
     filterLabel: {
@@ -2455,35 +2485,20 @@ const styles =
       letterSpacing: 0.5,
     },
 
-    filterOptions: {
-      flexDirection: 'row',
-      gap: 6,
-    },
-
-    filterChip: {
-      minHeight: 32,
-      paddingHorizontal: 11,
-      borderRadius: 8,
-      backgroundColor: '#FFFFFF',
+    filterSelectContainer: {
+      height: 52,
+      minHeight: 52,
       borderWidth: 1,
       borderColor: '#D7E0EA',
-      alignItems: 'center',
+      borderRadius: 8,
+      backgroundColor: '#FFFFFF',
+      overflow: 'hidden',
       justifyContent: 'center',
     },
 
-    filterChipActive: {
-      backgroundColor: '#1C3358',
-      borderColor: '#1C3358',
-    },
-
-    filterChipText: {
-      fontSize: 9,
-      fontWeight: '800',
-      color: '#64748B',
-    },
-
-    filterChipTextActive: {
-      color: '#FFFFFF',
+    filterPicker: {
+      width: '100%',
+      height: 52,
     },
 
     resetButton: {
@@ -3107,12 +3122,25 @@ const styles =
       borderColor: '#FFFFFF',
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
+    },
+
+    profileAvatarExpanded: {
+      width: 180,
+      height: 180,
+      borderRadius: 90,
     },
 
     profileAvatarText: {
       color: '#FFFFFF',
       fontSize: 25,
       fontWeight: '900',
+    },
+
+    profileAvatarImage: {
+      width: '100%',
+      height: '100%',
+      borderRadius: 90,
     },
 
     profileHeroContent: {
@@ -3135,6 +3163,36 @@ const styles =
       color: '#C9D5E6',
       fontSize: 10,
       fontWeight: '700',
+    },
+
+    profileMvaRow: {
+      marginTop: 4,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+
+    updateProfileButton: {
+      minHeight: 32,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#D7E0EA',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    updateProfileButtonPressed: {
+      opacity: 0.75,
+    },
+
+    updateProfileButtonText: {
+      color: '#1C3358',
+      fontSize: 10,
+      fontWeight: '900',
     },
 
     profileHeroMeta: {
@@ -3161,10 +3219,31 @@ const styles =
     },
 
     profileSectionHeader: {
+      minHeight: 48,
       paddingBottom: 13,
       marginBottom: 2,
       borderBottomWidth: 1,
       borderBottomColor: '#EEF2F7',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+
+    profileSectionHeaderPressed: {
+      opacity: 0.7,
+    },
+
+    profileSectionHeaderText: {
+      flex: 1,
+      minWidth: 0,
+    },
+
+    profileSectionChevron: {
+      marginLeft: 12,
+      fontSize: 20,
+      lineHeight: 20,
+      color: '#1C3358',
+      fontWeight: '900',
     },
 
     profileSectionTitle: {
