@@ -1,34 +1,39 @@
 import React, {useState} from 'react';
-import {Text, TouchableOpacity, View} from 'react-native';
 
 import LoginScreen from './src/screens/LoginScreen';
 import AdminDashboard from './src/screens/AdminDashboard';
 import StudentList from './src/components/students/StudentList';
+import StudentForm from './src/components/students/StudentForm';
 
-type Screen = 'login' | 'dashboard' | 'students';
+type Screen =
+  | 'login'
+  | 'dashboard'
+  | 'students'
+  | 'addStudent';
 
 function App(): React.JSX.Element {
-  const [screen, setScreen] = useState<Screen>('login');
-
-  const handleLoginSuccess = () => {
-    console.log('LOGIN SUCCESS → DASHBOARD');
-    setScreen('dashboard');
-  };
-
-  const handleManageStudents = () => {
-    console.log('MANAGE STUDENTS → STUDENT LIST');
-    setScreen('students');
-  };
-
-  const handleBackToDashboard = () => {
-    console.log('STUDENT LIST → DASHBOARD');
-    setScreen('dashboard');
-  };
+  const [screen, setScreen] =
+    useState<Screen>('login');
 
   if (screen === 'login') {
     return (
       <LoginScreen
-        onLoginSuccess={handleLoginSuccess}
+        onLoginSuccess={() =>
+          setScreen('dashboard')
+        }
+      />
+    );
+  }
+
+  if (screen === 'addStudent') {
+    return (
+      <StudentForm
+        onBack={() =>
+          setScreen('dashboard')
+        }
+        onSuccess={() =>
+          setScreen('students')
+        }
       />
     );
   }
@@ -36,15 +41,24 @@ function App(): React.JSX.Element {
   if (screen === 'students') {
     return (
       <StudentList
-        onBack={handleBackToDashboard}
+        onBack={() =>
+          setScreen('dashboard')
+        }
       />
     );
   }
 
   return (
     <AdminDashboard
-      onLogout={() => setScreen('login')}
-      onStudentsPress={handleManageStudents}
+      onLogout={() =>
+        setScreen('login')
+      }
+      onStudentsPress={() =>
+        setScreen('students')
+      }
+      onAddStudent={() =>
+        setScreen('addStudent')
+      }
     />
   );
 }
